@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { Tldraw, AssetRecordType, createShapeId } from 'tldraw';
 import 'tldraw/tldraw.css';
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 
-// 🌟 引入 Firebase 工具
+// 引入 Firebase 工具
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc } from 'firebase/firestore';
 
+// ==========================================
+// 🌟 1. Firebase 設定
+// ==========================================
 // ==========================================
 // 🌟 1. 請在這裡填入你的 Firebase 設定
 // ==========================================
@@ -29,18 +31,17 @@ const db = getFirestore(app);
 const CLOUD_NAME = "djyt6fh9g"; 
 const UPLOAD_PRESET = "zazj8sfj"; // 記得要設定為 Unsigned
 
-// PDF 引擎設定
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.mjs`;
-
 export default function App() {
   const [params, setParams] = useState({ taskId: '', student: '', pdfUrl: '' });
   const [timeLeft, setTimeLeft] = useState(null);
   const [editor, setEditor] = useState(null);
   const [isLoadingPdf, setIsLoadingPdf] = useState(false);
   
-  // 🌟 上傳狀態鎖 (防止防作弊、時間到、手動按鈕 發生重複交卷)
   const [isUploading, setIsUploading] = useState(false);
-  const isSubmittingRef = useRef(false); 
+  const isSubmittingRef = useRef(false);
+  
+  // 🌟 關鍵防護罩：確保 PDF 絕對只會被載入和貼上一次，絕不重複觸發
+  const hasLoadedRef = useRef(false);
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
@@ -54,12 +55,9 @@ export default function App() {
     else setTimeLeft(120); 
   }, []);
 
-  // ==========================================
-  // 🌟 新增：防作弊偵測 (跳出畫面即交卷)
-  // ==========================================
+  // 防作弊偵測
   useEffect(() => {
     const handleVisibilityChange = () => {
-      // 當網頁變成隱藏狀態，且編輯器已載入，且還沒開始交卷時
       if (document.visibilityState === 'hidden' && editor && !isSubmittingRef.current) {
         handleAutoSubmit("⚠️ 系統偵測到您跳出/切換了作答畫面！已強制收卷。");
       }
@@ -69,7 +67,7 @@ export default function App() {
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [editor]); // 依賴 editor 來確保有截圖目標
+  }, [editor]);
 
   // 倒數計時器
   useEffect(() => {
@@ -94,26 +92,20 @@ export default function App() {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  // ==========================================
-  // 🌟 最終版交卷引擎：截圖 -> Cloudinary -> Firebase
-  // ==========================================
+  // 交卷引擎
   const handleAutoSubmit = async (message) => {
     if (!editor) return;
-    if (isSubmittingRef.current) return; // 鎖住，防止重複觸發
+    if (isSubmittingRef.current) return;
     
-    // 上鎖並顯示 Loading 畫面
     isSubmittingRef.current = true;
     setIsUploading(true);
 
-    // 延遲一點點 alert，讓 UI 上的 isUploading 可以先渲染出來
     setTimeout(() => alert(message), 100);
 
     try {
-      // 1. 取得畫布形狀並壓扁成圖片
       const shapes = editor.getCurrentPageShapes();
       const { blob } = await editor.toImage(shapes, { format: 'png', background: true, padding: 20 });
 
-      // 2. 上傳到 Cloudinary
       const formData = new FormData();
       formData.append('file', blob);
       formData.append('upload_preset', UPLOAD_PRESET);
@@ -127,41 +119,40 @@ export default function App() {
       if (!cloudData.secure_url) throw new Error("Cloudinary 上傳失敗");
       const imageUrl = cloudData.secure_url;
 
-      // 3. 將圖片網址與考生資訊寫入 Firebase (存入 'exam_results' 集合中)
       await addDoc(collection(db, "exam_results"), {
         taskId: params.taskId,
         student: params.student,
         imageUrl: imageUrl,
         submittedAt: new Date(),
-        reason: message // 記錄交卷原因 (可讓老師知道學生是不是作弊被抓)
+        reason: message
       });
 
-      console.log("資料庫寫入成功！");
-      alert("✅ 交卷成功！即將返回首頁...");
-      
-      // 4. 交卷完成後，強制把學生踢回你的家教平台主網站 (請改為你的實際網址)
+      alert("✅ 交卷成功！即將返回...");
       window.location.href = "https://www.google.com.tw"; 
 
     } catch (error) {
       console.error("交卷流程失敗:", error);
-      alert("交卷處理失敗，請聯繫老師或稍後再試。");
-      
-      // 如果失敗了，解開鎖讓學生可以重新按鈕上傳
+      alert("交卷處理失敗，請聯繫老師。");
       isSubmittingRef.current = false;
       setIsUploading(false);
     }
   };
 
+  // PDF 載入函數
   const loadPdfIntoTldraw = async (tldrawEditor, url) => {
-    if (!url) return;
+    if (!url || hasLoadedRef.current) return; // 如果已經載入過了，直接跳出！
+    hasLoadedRef.current = true; // 立馬上鎖
     setIsLoadingPdf(true);
     
     try {
+      const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.mjs`;
+
       const loadingTask = pdfjsLib.getDocument({ url: url });
       const pdf = await loadingTask.promise;
       const page = await pdf.getPage(1); 
       
-      const viewport = page.getViewport({ scale: 2.5 }); 
+      const viewport = page.getViewport({ scale: 1.5 }); 
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       canvas.width = viewport.width;
@@ -191,12 +182,13 @@ export default function App() {
     } catch (err) {
       console.error("PDF 載入失敗:", err);
       alert("考卷載入失敗：" + err.message);
+      hasLoadedRef.current = false; // 失敗時解鎖讓它可以重試
     } finally {
       setIsLoadingPdf(false);
     }
   };
 
-useEffect(() => {
+  useEffect(() => {
     if (editor && params.pdfUrl) {
       loadPdfIntoTldraw(editor, params.pdfUrl);
     }
@@ -205,7 +197,6 @@ useEffect(() => {
   return (
     <div style={{ position: 'fixed', inset: 0, overflow: 'hidden' }}>
       
-      {/* 若正在上傳交卷中，蓋住整個畫面防止再操作 */}
       {isUploading && (
         <div style={{
           position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.9)',
@@ -232,7 +223,7 @@ useEffect(() => {
             padding: '8px 15px', borderRadius: '8px',
             fontWeight: 'bold', fontSize: '20px', transition: 'all 0.3s ease'
           }}>
-            ⏱️ {formatTime(timeLeft)}
+            ⏱️️ {formatTime(timeLeft)}
           </div>
           <span style={{ color: '#7f8c8d', fontSize: '15px', fontWeight: 'bold' }}>
             🧑‍🎓 考生：{params.student}
