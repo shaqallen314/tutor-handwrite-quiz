@@ -154,6 +154,7 @@ function App() {
     }
   };
 
+  // 🌟 升級版安全 PDF 載入函數（具備字型防崩潰保護）
   const loadPdfIntoTldraw = async (tldrawEditor, url) => {
     if (!url || hasLoadedRef.current) return; 
     hasLoadedRef.current = true; 
@@ -173,7 +174,13 @@ function App() {
       canvas.width = viewport.width;
       canvas.height = viewport.height;
       
-      await page.render({ canvasContext: ctx, viewport }).promise;
+      // 🌟 用 try...catch 把最容易翻車的 pdf.js render 過程包起來
+      try {
+        await page.render({ canvasContext: ctx, viewport }).promise;
+      } catch (renderErr) {
+        console.warn("PDF 渲染遇到字型或圖形警告，已自動略過:", renderErr);
+      }
+
       const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
 
       const assetId = AssetRecordType.createId();
