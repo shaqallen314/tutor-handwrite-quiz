@@ -7,9 +7,6 @@ import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc } from 'firebase/firestore';
 
 // ==========================================
-// 🌟 1. Firebase 設定
-// ==========================================
-// ==========================================
 // 🌟 1. 請在這裡填入你的 Firebase 設定
 // ==========================================
 const firebaseConfig = {
@@ -32,28 +29,25 @@ const CLOUD_NAME = "djyt6fh9g";
 const UPLOAD_PRESET = "zazj8sfj"; // 記得要設定為 Unsigned
 
 export default function App() {
-  const [params, setParams] = useState({ taskId: '', student: '', pdfUrl: '' });
-  const [timeLeft, setTimeLeft] = useState(null);
+  // 🌟 核心修正：直接在 useState 裡解析網址參數，避免多次 setState 造成畫面重建
+  const [params] = useState(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const taskId = searchParams.get('taskId') || 'test-id';
+    const student = searchParams.get('student') || '測試學生';
+    const pdfUrl = searchParams.get('pdfUrl') || '/test.pdf'; 
+    const timeLimit = parseInt(searchParams.get('time')) || 2; // 預設 2 分鐘
+    return { taskId, student, pdfUrl, timeLimit };
+  });
+
+  // 🌟 讓倒數計時一開始就有正確的值，不再經歷 null -> 數字 的二次渲染
+  const [timeLeft, setTimeLeft] = useState(params.timeLimit * 60);
+  
   const [editor, setEditor] = useState(null);
   const [isLoadingPdf, setIsLoadingPdf] = useState(false);
   
   const [isUploading, setIsUploading] = useState(false);
   const isSubmittingRef = useRef(false);
-  
-  // 🌟 關鍵防護罩：確保 PDF 絕對只會被載入和貼上一次，絕不重複觸發
   const hasLoadedRef = useRef(false);
-
-  useEffect(() => {
-    const searchParams = new URLSearchParams(window.location.search);
-    const taskId = searchParams.get('taskId') || 'test-id';
-    const student = searchParams.get('student') || '測試學生';
-    const pdfUrl = searchParams.get('pdfUrl') || '/test.pdf'; 
-    const timeLimit = parseInt(searchParams.get('time')) || 0; 
-
-    setParams({ taskId, student, pdfUrl });
-    if (timeLimit > 0) setTimeLeft(timeLimit * 60);
-    else setTimeLeft(120); 
-  }, []);
 
   // 防作弊偵測
   useEffect(() => {
@@ -71,7 +65,7 @@ export default function App() {
 
   // 倒數計時器
   useEffect(() => {
-    if (timeLeft === null || timeLeft <= 0 || isSubmittingRef.current) return;
+    if (timeLeft <= 0 || isSubmittingRef.current) return;
     const timerId = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
@@ -86,7 +80,6 @@ export default function App() {
   }, [timeLeft]);
 
   const formatTime = (seconds) => {
-    if (seconds === null) return "--:--";
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
     return `${m}:${s.toString().padStart(2, '0')}`;
@@ -140,8 +133,8 @@ export default function App() {
 
   // PDF 載入函數
   const loadPdfIntoTldraw = async (tldrawEditor, url) => {
-    if (!url || hasLoadedRef.current) return; // 如果已經載入過了，直接跳出！
-    hasLoadedRef.current = true; // 立馬上鎖
+    if (!url || hasLoadedRef.current) return; 
+    hasLoadedRef.current = true; 
     setIsLoadingPdf(true);
     
     try {
@@ -182,7 +175,7 @@ export default function App() {
     } catch (err) {
       console.error("PDF 載入失敗:", err);
       alert("考卷載入失敗：" + err.message);
-      hasLoadedRef.current = false; // 失敗時解鎖讓它可以重試
+      hasLoadedRef.current = false; 
     } finally {
       setIsLoadingPdf(false);
     }
@@ -223,7 +216,7 @@ export default function App() {
             padding: '8px 15px', borderRadius: '8px',
             fontWeight: 'bold', fontSize: '20px', transition: 'all 0.3s ease'
           }}>
-            ⏱️️ {formatTime(timeLeft)}
+            ⏱️ {formatTime(timeLeft)}
           </div>
           <span style={{ color: '#7f8c8d', fontSize: '15px', fontWeight: 'bold' }}>
             🧑‍🎓 考生：{params.student}
