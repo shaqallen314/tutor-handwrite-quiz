@@ -1,8 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Component } from 'react';
 import { Tldraw, AssetRecordType, createShapeId } from 'tldraw';
 import 'tldraw/tldraw.css';
 
-// 引入 Firebase 工具
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, addDoc } from 'firebase/firestore';
 
@@ -28,20 +27,54 @@ const db = getFirestore(app);
 const CLOUD_NAME = "djyt6fh9g"; 
 const UPLOAD_PRESET = "zazj8sfj"; // 記得要設定為 Unsigned
 
-export default function App() {
-  // 🌟 核心修正：直接在 useState 裡解析網址參數，避免多次 setState 造成畫面重建
+// 🌟 內建錯誤攔截雷達 (ErrorBoundary)
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null, errorInfo: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    this.setState({ errorInfo });
+    console.error("ErrorBoundary caught an error", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '30px', background: '#ffebee', color: '#c62828', height: '100vh', overflow: 'auto', fontFamily: 'monospace' }}>
+          <h2>💥 抓到系統崩潰原因 (Crash Error)</h2>
+          <h3>{this.state.error && this.state.error.toString()}</h3>
+          <pre style={{ background: '#fff', padding: '15px', border: '1px solid #ef9a9a' }}>
+            {this.state.errorInfo && this.state.errorInfo.componentStack}
+          </pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export default function AppWrapper() {
+  return (
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
+  );
+}
+
+function App() {
   const [params] = useState(() => {
     const searchParams = new URLSearchParams(window.location.search);
     const taskId = searchParams.get('taskId') || 'test-id';
     const student = searchParams.get('student') || '測試學生';
     const pdfUrl = searchParams.get('pdfUrl') || '/test.pdf'; 
-    const timeLimit = parseInt(searchParams.get('time')) || 2; // 預設 2 分鐘
+    const timeLimit = parseInt(searchParams.get('time')) || 2;
     return { taskId, student, pdfUrl, timeLimit };
   });
 
-  // 🌟 讓倒數計時一開始就有正確的值，不再經歷 null -> 數字 的二次渲染
   const [timeLeft, setTimeLeft] = useState(params.timeLimit * 60);
-  
   const [editor, setEditor] = useState(null);
   const [isLoadingPdf, setIsLoadingPdf] = useState(false);
   
@@ -49,21 +82,16 @@ export default function App() {
   const isSubmittingRef = useRef(false);
   const hasLoadedRef = useRef(false);
 
-  // 防作弊偵測
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden' && editor && !isSubmittingRef.current) {
         handleAutoSubmit("⚠️ 系統偵測到您跳出/切換了作答畫面！已強制收卷。");
       }
     };
-
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [editor]);
 
-  // 倒數計時器
   useEffect(() => {
     if (timeLeft <= 0 || isSubmittingRef.current) return;
     const timerId = setInterval(() => {
@@ -85,14 +113,12 @@ export default function App() {
     return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  // 交卷引擎
   const handleAutoSubmit = async (message) => {
     if (!editor) return;
     if (isSubmittingRef.current) return;
     
     isSubmittingRef.current = true;
     setIsUploading(true);
-
     setTimeout(() => alert(message), 100);
 
     try {
@@ -108,30 +134,26 @@ export default function App() {
         body: formData
       });
       const cloudData = await cloudinaryRes.json();
-      
       if (!cloudData.secure_url) throw new Error("Cloudinary 上傳失敗");
-      const imageUrl = cloudData.secure_url;
 
       await addDoc(collection(db, "exam_results"), {
         taskId: params.taskId,
         student: params.student,
-        imageUrl: imageUrl,
+        imageUrl: cloudData.secure_url,
         submittedAt: new Date(),
         reason: message
       });
 
-      alert("✅ 交卷成功！即將返回...");
+      alert("✅ 交卷成功！");
       window.location.href = "https://www.google.com.tw"; 
-
     } catch (error) {
       console.error("交卷流程失敗:", error);
-      alert("交卷處理失敗，請聯繫老師。");
+      alert("交卷處理失敗：" + error.message);
       isSubmittingRef.current = false;
       setIsUploading(false);
     }
   };
 
-  // PDF 載入函數
   const loadPdfIntoTldraw = async (tldrawEditor, url) => {
     if (!url || hasLoadedRef.current) return; 
     hasLoadedRef.current = true; 
@@ -189,61 +211,36 @@ export default function App() {
 
   return (
     <div style={{ position: 'fixed', inset: 0, overflow: 'hidden' }}>
-      
       {isUploading && (
         <div style={{
           position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.9)',
           zIndex: 99999, display: 'flex', flexDirection: 'column',
-          justifyContent: 'center', alignItems: 'center',
-          fontSize: '24px', fontWeight: 'bold', color: '#27ae60'
+          justifyContent: 'center', alignItems: 'center', fontSize: '24px', fontWeight: 'bold', color: '#27ae60'
         }}>
-          <div style={{ marginBottom: '20px', fontSize: '40px' }}>🚀</div>
-          考卷上傳中，請勿關閉網頁...
+          🚀 考卷上傳中，請勿關閉網頁...
         </div>
       )}
 
-      {/* 頂部儀表板 */}
       <div style={{
         position: 'absolute', top: 0, left: 0, right: 0, height: '60px',
         background: '#ffffff', borderBottom: '2px solid #ecf0f1',
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        padding: '0 20px', fontFamily: 'sans-serif', zIndex: 10
+        padding: '0 20px', zIndex: 10
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-          <div style={{
-            background: timeLeft <= 60 ? '#fadbd8' : '#ecf0f1',
-            color: timeLeft <= 60 ? '#c0392b' : '#2c3e50',
-            padding: '8px 15px', borderRadius: '8px',
-            fontWeight: 'bold', fontSize: '20px', transition: 'all 0.3s ease'
-          }}>
+          <div style={{ background: '#ecf0f1', padding: '8px 15px', borderRadius: '8px', fontWeight: 'bold', fontSize: '20px' }}>
             ⏱️ {formatTime(timeLeft)}
           </div>
-          <span style={{ color: '#7f8c8d', fontSize: '15px', fontWeight: 'bold' }}>
-            🧑‍🎓 考生：{params.student}
-          </span>
+          <span>🧑‍🎓 考生：{params.student}</span>
         </div>
-        
-        <button 
-          onClick={() => handleAutoSubmit("確定要提前交卷嗎？")}
-          style={{
-            background: '#27ae60', color: 'white', border: 'none',
-            padding: '10px 20px', borderRadius: '8px',
-            fontWeight: 'bold', fontSize: '16px', cursor: 'pointer',
-            boxShadow: '0 4px 6px rgba(39, 174, 96, 0.2)'
-          }}
-        >
+        <button onClick={() => handleAutoSubmit("確定要提前交卷嗎？")} style={{ background: '#27ae60', color: 'white', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>
           提前交卷
         </button>
       </div>
 
-      {/* tldraw 畫布本體 */}
       <div style={{ position: 'absolute', top: '60px', bottom: 0, left: 0, right: 0 }}>
         {isLoadingPdf && (
-          <div style={{
-            position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.8)',
-            zIndex: 5, display: 'flex', justifyContent: 'center', alignItems: 'center',
-            fontSize: '20px', fontWeight: 'bold', color: '#2c3e50'
-          }}>
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.8)', zIndex: 5, display: 'flex', justifyContent: 'center', alignItems: 'center', fontWeight: 'bold' }}>
             🔄 考卷解析與載入中...
           </div>
         )}
