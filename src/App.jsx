@@ -5,7 +5,7 @@ import 'tldraw/tldraw.css';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, addDoc } from 'firebase/firestore';
+import { getFirestore, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 
 // ==========================================
 // 🌟 1. Firebase 與 Cloudinary 設定 (請填寫你的金鑰)
@@ -124,16 +124,17 @@ export default function App() {
       if (!cloudData.secure_url) throw new Error("圖床上傳失敗");
 
       // 將成績與圖片網址寫入 Firebase Firestore
-      await addDoc(collection(db, "exam_results"), {
-        taskId: params.taskId,
-        student: params.student,
-        imageUrl: cloudData.secure_url,
-        submittedAt: new Date(),
-        reason: message
+      await updateDoc(doc(db, "tasks", params.taskId), {
+        status: "已完成",
+        studentReplyUrls: [cloudData.secure_url], 
+        studentReplyPdfNames: ["系統自動合成作答卷"], 
+        replyTimestamp: serverTimestamp()
       });
 
-      alert("✅ 交卷成功！即將為您跳轉...");
-      window.location.href = "https://www.google.com.tw"; // 交卷後踢回首頁 (或你的家教網址)
+      alert("✅ 交卷成功！請關閉此分頁，回到家教網即可看到作答紀錄。");
+      
+      // 交卷成功後直接關閉這個測驗分頁 (若瀏覽器阻擋則會停留在原畫面，讓學生自行手動關閉)
+      window.close();
 
     } catch (error) {
       console.error("交卷失敗:", error);
