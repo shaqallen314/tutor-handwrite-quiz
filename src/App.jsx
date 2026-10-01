@@ -28,8 +28,6 @@ const db = getFirestore(app);
 const CLOUD_NAME = "djyt6fh9g"; 
 const UPLOAD_PRESET = "zazj8sfj"; // 記得要設定為 Unsigned
 
-const CLOUD_NAME = "你的cloud_name"; 
-const UPLOAD_PRESET = "你的upload_preset";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.mjs`;
 
