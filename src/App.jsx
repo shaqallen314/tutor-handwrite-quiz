@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 // 🌟 引入 exportToBlob 處理交卷圖片輸出
-import { Tldraw, AssetRecordType, createShapeId, exportToBlob } from 'tldraw';
+import { Tldraw, AssetRecordType, createShapeId, exportToBlob, DefaultSizeStyle } from 'tldraw';
 import 'tldraw/tldraw.css';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 
@@ -111,6 +111,14 @@ export default function App() {
 
   const handleMount = useCallback((editorInstance) => {
     setEditor(editorInstance);
+
+    // 1. 預設自動選取「畫筆」工具 (不用等學生自己點)
+    editorInstance.setCurrentTool('draw');
+
+    // 2. 設定預設筆刷大小
+    // 可選值有：'s' (細), 'm' (中), 'l' (粗), 'xl' (極粗)
+    editorInstance.setStyleForNextShapes(DefaultSizeStyle, 's');
+
   }, []);
 
   // 🌟 功能：自動交卷引擎 (上傳 Cloudinary + 寫入 Firebase)
