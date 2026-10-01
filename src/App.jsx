@@ -5,7 +5,7 @@ import 'tldraw/tldraw.css';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 import { initializeApp } from 'firebase/app';
-import { getFirestore, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { getFirestore, doc, updateDoc, getDoc, serverTimestamp } from 'firebase/firestore';
 
 // ==========================================
 // 🌟 1. Firebase 與 Cloudinary 設定 (請填寫你的金鑰)
@@ -74,13 +74,39 @@ export default function App() {
 
   // 讀取網址參數
   useEffect(() => {
-    const searchParams = new URLSearchParams(window.location.search);
-    const taskId = searchParams.get('taskId') || 'test-id';
-    const student = searchParams.get('student') || '測試學生';
-    const pdfUrl = searchParams.get('pdfUrl') || '/test.pdf'; 
-    const timeLimit = parseInt(searchParams.get('time')) || 2; 
+    const fetchQuizData = async () => {
+      const searchParams = new URLSearchParams(window.location.search);
+      const taskId = searchParams.get('taskId');
+      const student = searchParams.get('student');
+      
+      if (!taskId) {
+        alert("無效的測驗連結！");
+        return;
+      }
 
-    setParams({ taskId, student, pdfUrl, initialTime: timeLimit > 0 ? timeLimit * 60 : 120 });
+      try {
+        // 使用 taskId 向資料庫查詢這份考卷的真實設定
+        const taskRef = doc(db, "tasks", taskId);
+        const taskSnap = await getDoc(taskRef);
+
+        if (taskSnap.exists()) {
+          const data = taskSnap.data();
+          // 將資料庫裡的真實時間與 PDF 網址存入 State
+          setParams({ 
+            taskId: taskId, 
+            student: student || "測試學生", 
+            pdfUrl: data.fileUrl, 
+            initialTime: data.timeLimit ? data.timeLimit * 60 : 120 
+          });
+        } else {
+          alert("找不到這份考卷！可能已被老師刪除。");
+        }
+      } catch (error) {
+        console.error("讀取考卷資料失敗：", error);
+      }
+    };
+
+    fetchQuizData();
   }, []);
 
   const handleMount = useCallback((editorInstance) => {
