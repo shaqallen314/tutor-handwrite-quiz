@@ -165,15 +165,19 @@ export default function App() {
       
       await page.render({ canvasContext: ctx, viewport }).promise;
       
+      // ---- 🌟 換成這段正確的版本 ----
+      const myAssetId = AssetRecordType.createId(); // 先產生並記住這個唯一的資源 ID
+      const myShapeId = createShapeId();
+
       tldrawEditor.createAssets([{
-        id: AssetRecordType.createId(), type: 'image', typeName: 'asset',
+        id: myAssetId, type: 'image', typeName: 'asset',
         props: { w: canvas.width, h: canvas.height, name: 'exam-paper', isAnimated: false, mimeType: 'image/jpeg', src: canvas.toDataURL('image/jpeg', 0.9) },
         meta: {}, 
       }]);
 
       tldrawEditor.createShapes([{
-        id: createShapeId(), type: 'image', x: 0, y: 0, isLocked: true,
-        props: { assetId: AssetRecordType.createId(), w: canvas.width, h: canvas.height }, // 故意重複取 id 但已宣告所以沒問題
+        id: myShapeId, type: 'image', x: 0, y: 0, isLocked: true,
+        props: { assetId: myAssetId, w: canvas.width, h: canvas.height }, // 🌟 精準指定貼上剛剛那張圖片
         meta: {}, 
       }]);
 
@@ -185,6 +189,10 @@ export default function App() {
     } finally {
       setIsLoadingPdf(false);
     }
+    // 新增這個 useCallback 防震墊
+  const handleMount = useCallback((editorInstance) => {
+    setEditor(editorInstance);
+  }, []);
   };
 
   useEffect(() => {
@@ -254,7 +262,7 @@ export default function App() {
             🔄 考卷解析與載入中...
           </div>
         )}
-        <Tldraw onMount={(editorInstance) => setEditor(editorInstance)} />
+        <Tldraw onMount={handleMount} />
       </div>
     </div>
   );
