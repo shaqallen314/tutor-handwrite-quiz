@@ -28,11 +28,10 @@ const db = getFirestore(app);
 const CLOUD_NAME = "djyt6fh9g"; 
 const UPLOAD_PRESET = "zazj8sfj"; // 記得要設定為 Unsigned
 
-
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.mjs`;
 
 // ==========================================
-// 🌟 2. 獨立的計時器元件 (完美隔離重新渲染)
+// 🌟 2. 獨立的計時器元件 (完美隔離重新渲染，保護畫布)
 // ==========================================
 const CountdownTimer = ({ initialTime, onTimeUp }) => {
   const [timeLeft, setTimeLeft] = useState(initialTime);
@@ -70,7 +69,7 @@ const CountdownTimer = ({ initialTime, onTimeUp }) => {
 
 
 // ==========================================
-// 🌟 3. 主應用程式 (現在只會渲染一次，畫布不再崩潰！)
+// 🌟 3. 主應用程式 
 // ==========================================
 export default function App() {
   const [params, setParams] = useState({ taskId: '', student: '', pdfUrl: '', initialTime: 0 });
@@ -95,7 +94,12 @@ export default function App() {
     });
   }, []);
 
-  // 2. 防作弊機制
+  // 2. 編輯器掛載防震墊
+  const handleMount = useCallback((editorInstance) => {
+    setEditor(editorInstance);
+  }, []);
+
+  // 3. 防作弊機制
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden' && editor && !isSubmittingRef.current) {
@@ -106,7 +110,7 @@ export default function App() {
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [editor]); 
 
-  // 3. 自動交卷引擎 (使用 useCallback 防止函數一直重建)
+  // 4. 自動交卷引擎
   const handleAutoSubmit = useCallback(async (message) => {
     if (!editor || isSubmittingRef.current) return;
     
@@ -148,7 +152,7 @@ export default function App() {
     }
   }, [editor, params]);
 
-  // 4. PDF 載入引擎
+  // 5. PDF 載入引擎 (修復 ID 斷層)
   const loadPdfIntoTldraw = async (tldrawEditor, url) => {
     if (!url) return;
     setIsLoadingPdf(true);
@@ -165,8 +169,7 @@ export default function App() {
       
       await page.render({ canvasContext: ctx, viewport }).promise;
       
-      // ---- 🌟 換成這段正確的版本 ----
-      const myAssetId = AssetRecordType.createId(); // 先產生並記住這個唯一的資源 ID
+      const myAssetId = AssetRecordType.createId();
       const myShapeId = createShapeId();
 
       tldrawEditor.createAssets([{
@@ -177,7 +180,7 @@ export default function App() {
 
       tldrawEditor.createShapes([{
         id: myShapeId, type: 'image', x: 0, y: 0, isLocked: true,
-        props: { assetId: myAssetId, w: canvas.width, h: canvas.height }, // 🌟 精準指定貼上剛剛那張圖片
+        props: { assetId: myAssetId, w: canvas.width, h: canvas.height }, 
         meta: {}, 
       }]);
 
@@ -189,10 +192,6 @@ export default function App() {
     } finally {
       setIsLoadingPdf(false);
     }
-    // 新增這個 useCallback 防震墊
-  const handleMount = useCallback((editorInstance) => {
-    setEditor(editorInstance);
-  }, []);
   };
 
   useEffect(() => {
@@ -225,7 +224,6 @@ export default function App() {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
           
-          {/* 🌟 只有這裡會每秒更新，畫布不再受影響 */}
           {params.initialTime > 0 && (
             <CountdownTimer 
               initialTime={params.initialTime} 
