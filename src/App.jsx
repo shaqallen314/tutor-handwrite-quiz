@@ -31,7 +31,7 @@ const UPLOAD_PRESET = "zazj8sfj"; // 記得要設定為 Unsigned
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/legacy/build/pdf.worker.mjs`;
 
 // ==========================================
-// 🌟 2. 獨立的計時器元件 (完美隔離重新渲染，保護畫布)
+// 🌟 2. 獨立的計時器元件
 // ==========================================
 const CountdownTimer = ({ initialTime, onTimeUp }) => {
   const [timeLeft, setTimeLeft] = useState(initialTime);
@@ -42,7 +42,7 @@ const CountdownTimer = ({ initialTime, onTimeUp }) => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timerId);
-          onTimeUp(); // 觸發交卷
+          onTimeUp(); 
           return 0;
         }
         return prev - 1;
@@ -69,16 +69,17 @@ const CountdownTimer = ({ initialTime, onTimeUp }) => {
 
 
 // ==========================================
-// 🌟 3. 主應用程式 
+// 🌟 3. 主應用程式
 // ==========================================
 export default function App() {
   const [params, setParams] = useState({ taskId: '', student: '', pdfUrl: '', initialTime: 0 });
   const [editor, setEditor] = useState(null);
   const [isLoadingPdf, setIsLoadingPdf] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  
   const isSubmittingRef = useRef(false);
+  const isPdfLoadedRef = useRef(false); // 🌟 防護鎖 1：防止 React 重複載入 PDF
 
-  // 1. 初始化讀取網址參數
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
     const taskId = searchParams.get('taskId') || 'test-id';
@@ -86,20 +87,13 @@ export default function App() {
     const pdfUrl = searchParams.get('pdfUrl') || '/test.pdf'; 
     const timeLimit = parseInt(searchParams.get('time')) || 0; 
 
-    setParams({ 
-      taskId, 
-      student, 
-      pdfUrl, 
-      initialTime: timeLimit > 0 ? timeLimit * 60 : 120 
-    });
+    setParams({ taskId, student, pdfUrl, initialTime: timeLimit > 0 ? timeLimit * 60 : 120 });
   }, []);
 
-  // 2. 編輯器掛載防震墊
   const handleMount = useCallback((editorInstance) => {
     setEditor(editorInstance);
   }, []);
 
-  // 3. 防作弊機制
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden' && editor && !isSubmittingRef.current) {
@@ -110,7 +104,6 @@ export default function App() {
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
   }, [editor]); 
 
-  // 4. 自動交卷引擎
   const handleAutoSubmit = useCallback(async (message) => {
     if (!editor || isSubmittingRef.current) return;
     
@@ -152,7 +145,6 @@ export default function App() {
     }
   }, [editor, params]);
 
-  // 5. PDF 載入引擎 (修復 ID 斷層)
   const loadPdfIntoTldraw = async (tldrawEditor, url) => {
     if (!url) return;
     setIsLoadingPdf(true);
@@ -184,8 +176,15 @@ export default function App() {
         meta: {}, 
       }]);
 
-      tldrawEditor.zoomToFit({ duration: 500 });
-      tldrawEditor.setCurrentTool('draw');
+      // 🌟 防護鎖 2：強制延遲 0.2 秒，讓引擎有時間計算圖片體積，避免攝影機 NaN 當機
+      setTimeout(() => {
+        try {
+          tldrawEditor.zoomToFit();
+          tldrawEditor.setCurrentTool('draw');
+        } catch (e) {
+          console.error("縮放視角失敗", e);
+        }
+      }, 200);
 
     } catch (err) {
       console.error("PDF 載入失敗:", err);
@@ -195,7 +194,9 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (editor && params.pdfUrl) {
+    // 🌟 檢查防護鎖，確保 PDF 絕對只會被載入一次
+    if (editor && params.pdfUrl && !isPdfLoadedRef.current) {
+      isPdfLoadedRef.current = true;
       loadPdfIntoTldraw(editor, params.pdfUrl);
     }
   }, [editor, params.pdfUrl]);
@@ -215,7 +216,6 @@ export default function App() {
         </div>
       )}
 
-      {/* 頂部儀表板 */}
       <div style={{
         position: 'absolute', top: 0, left: 0, right: 0, height: '60px',
         background: '#ffffff', borderBottom: '2px solid #ecf0f1',
@@ -223,14 +223,12 @@ export default function App() {
         padding: '0 20px', fontFamily: 'sans-serif', zIndex: 10
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-          
           {params.initialTime > 0 && (
             <CountdownTimer 
               initialTime={params.initialTime} 
               onTimeUp={() => handleAutoSubmit("⏰ 時間到！系統已自動收卷。")} 
             />
           )}
-
           <span style={{ color: '#7f8c8d', fontSize: '15px', fontWeight: 'bold' }}>
             🧑‍🎓 {params.student}
           </span>
@@ -249,7 +247,6 @@ export default function App() {
         </button>
       </div>
 
-      {/* tldraw 畫布本體 */}
       <div style={{ position: 'absolute', top: '60px', bottom: 0, left: 0, right: 0 }}>
         {isLoadingPdf && (
           <div style={{
