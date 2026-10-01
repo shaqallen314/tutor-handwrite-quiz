@@ -53,8 +53,6 @@ const CountdownTimer = ({ initialTime, onTimeUp }) => {
 
   const m = Math.floor(timeLeft / 60);
   const s = timeLeft % 60;
-  const timeString = `${m}:${s.toString().padStart(2, '0')}`;
-
   return (
     <div style={{
       background: timeLeft <= 60 ? '#fadbd8' : '#ecf0f1',
@@ -62,11 +60,10 @@ const CountdownTimer = ({ initialTime, onTimeUp }) => {
       padding: '8px 15px', borderRadius: '8px',
       fontWeight: 'bold', fontSize: '20px', transition: 'all 0.3s ease'
     }}>
-      ⏱️ {timeString}
+      ⏱️ {`${m}:${s.toString().padStart(2, '0')}`}
     </div>
   );
 };
-
 
 // ==========================================
 // 🌟 3. 主應用程式
@@ -78,7 +75,7 @@ export default function App() {
   const [isUploading, setIsUploading] = useState(false);
   
   const isSubmittingRef = useRef(false);
-  const isPdfLoadedRef = useRef(false); // 🌟 防護鎖 1：防止 React 重複載入 PDF
+  const isPdfLoadedRef = useRef(false); 
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
@@ -86,7 +83,6 @@ export default function App() {
     const student = searchParams.get('student') || '測試學生';
     const pdfUrl = searchParams.get('pdfUrl') || '/test.pdf'; 
     const timeLimit = parseInt(searchParams.get('time')) || 0; 
-
     setParams({ taskId, student, pdfUrl, initialTime: timeLimit > 0 ? timeLimit * 60 : 120 });
   }, []);
 
@@ -161,12 +157,28 @@ export default function App() {
       
       await page.render({ canvasContext: ctx, viewport }).promise;
       
+      // ==========================================
+      // 🌟 核心修復：放棄百萬字 Base64，改用極輕量的 Blob URL
+      // ==========================================
+      const blobUrl = await new Promise((resolve) => {
+        canvas.toBlob((blob) => {
+          resolve(URL.createObjectURL(blob));
+        }, 'image/jpeg', 0.8);
+      });
+
       const myAssetId = AssetRecordType.createId();
       const myShapeId = createShapeId();
 
       tldrawEditor.createAssets([{
         id: myAssetId, type: 'image', typeName: 'asset',
-        props: { w: canvas.width, h: canvas.height, name: 'exam-paper', isAnimated: false, mimeType: 'image/jpeg', src: canvas.toDataURL('image/jpeg', 0.9) },
+        props: { 
+          w: canvas.width, 
+          h: canvas.height, 
+          name: 'exam-paper', 
+          isAnimated: false, 
+          mimeType: 'image/jpeg', 
+          src: blobUrl // 🚀 記憶體釋放！不會再撐爆 Tldraw 了
+        },
         meta: {}, 
       }]);
 
@@ -176,13 +188,12 @@ export default function App() {
         meta: {}, 
       }]);
 
-      // 🌟 防護鎖 2：強制延遲 0.2 秒，讓引擎有時間計算圖片體積，避免攝影機 NaN 當機
       setTimeout(() => {
         try {
           tldrawEditor.zoomToFit();
           tldrawEditor.setCurrentTool('draw');
         } catch (e) {
-          console.error("縮放視角失敗", e);
+          console.error("視角縮放略過", e);
         }
       }, 200);
 
@@ -194,7 +205,6 @@ export default function App() {
   };
 
   useEffect(() => {
-    // 🌟 檢查防護鎖，確保 PDF 絕對只會被載入一次
     if (editor && params.pdfUrl && !isPdfLoadedRef.current) {
       isPdfLoadedRef.current = true;
       loadPdfIntoTldraw(editor, params.pdfUrl);
