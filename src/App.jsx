@@ -91,6 +91,12 @@ export default function App() {
 
         if (taskSnap.exists()) {
           const data = taskSnap.data();
+
+          if (data.status === "已完成") {
+            alert("⚠️ 您已經繳交過這份測驗，無法重複作答！若要查看成績，請在家教網重新整理畫面。");
+            window.close(); // 直接關閉這個分頁
+            return; // 終止後續載入
+          }
           // 將資料庫裡的真實時間與 PDF 網址存入 State
           setParams({ 
             taskId: taskId, 
