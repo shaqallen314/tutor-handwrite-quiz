@@ -221,7 +221,7 @@ export default function App() {
       // 🌟 核心更新：用迴圈把 PDF 的每一頁都抓出來
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i); 
-        const viewport = page.getViewport({ scale: 1.5 }); 
+        const viewport = page.getViewport({ scale: 3.0 }); 
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         canvas.width = viewport.width;
