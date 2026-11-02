@@ -163,17 +163,27 @@ export default function App() {
       
       if (!cloudData.secure_url) throw new Error("圖床上傳失敗");
 
+      // ==========================================
+      // 🌟 Cloudinary PDF 轉換魔法
+      // ==========================================
+      const originalImageUrl = cloudData.secure_url;
+      // 將結尾的圖片副檔名強制替換為 .pdf
+      const pdfDownloadUrl = originalImageUrl.replace(/\.(png|jpg|jpeg|webp)$/i, ".pdf");
+
       // 將成績與圖片網址寫入 Firebase Firestore
       await updateDoc(doc(db, "tasks", params.taskId), {
         status: "已完成",
-        studentReplyUrls: [cloudData.secure_url], 
-        studentReplyPdfNames: ["系統自動合成作答卷"], 
+        // 🌟 這裡直接存入轉換後的 PDF 網址
+        studentReplyUrls: [pdfDownloadUrl], 
+        // 建議多存一個原始圖片網址，方便你日後在家教網後台做「快速圖片預覽」
+        studentReplyImageUrls: [originalImageUrl], 
+        // 建議加上 .pdf 讓下載時的檔名更完整
+        studentReplyPdfNames: ["系統自動合成作答卷.pdf"], 
         replyTimestamp: serverTimestamp()
       });
 
       alert("✅ 交卷成功！請關閉此分頁，回到家教網即可看到作答紀錄。");
       
-      // 交卷成功後直接關閉這個測驗分頁 (若瀏覽器阻擋則會停留在原畫面，讓學生自行手動關閉)
       window.close();
 
     } catch (error) {
@@ -202,35 +212,55 @@ export default function App() {
     try {
       const loadingTask = pdfjsLib.getDocument({ url: url });
       const pdf = await loadingTask.promise;
-      const page = await pdf.getPage(1); 
       
-      const viewport = page.getViewport({ scale: 2.5 }); 
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      await page.render({ canvasContext: ctx, viewport }).promise;
-      
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-      const myAssetId = AssetRecordType.createId();
-      const myShapeId = createShapeId();
+      const assets = [];
+      const shapes = [];
+      let currentY = 0; // 記錄目前應該把圖片貼在哪個 Y 軸高度
+      const pageGap = 50; // 設定兩頁之間的空白間距為 50px
 
-      tldrawEditor.createAssets([{
-        id: myAssetId, type: 'image', typeName: 'asset',
-        props: { 
-          w: canvas.width, h: canvas.height, 
-          name: 'exam-paper', isAnimated: false, 
-          mimeType: 'image/jpeg', src: dataUrl 
-        },
-        meta: {}, 
-      }]);
+      // 🌟 核心更新：用迴圈把 PDF 的每一頁都抓出來
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i); 
+        const viewport = page.getViewport({ scale: 1.5 }); 
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        
+        // 渲染該頁
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        
+        const myAssetId = AssetRecordType.createId();
+        const myShapeId = createShapeId();
 
-      tldrawEditor.createShapes([{
-        id: myShapeId, type: 'image', x: 0, y: 0, isLocked: true,
-        props: { assetId: myAssetId, w: canvas.width, h: canvas.height }, 
-        meta: {}, 
-      }]);
+        assets.push({
+          id: myAssetId, type: 'image', typeName: 'asset',
+          props: { 
+            w: canvas.width, h: canvas.height, 
+            name: `exam-paper-page-${i}`, isAnimated: false, 
+            mimeType: 'image/jpeg', src: dataUrl 
+          },
+          meta: {}, 
+        });
 
+        shapes.push({
+          id: myShapeId, type: 'image', 
+          x: 0, y: currentY, // 🌟 根據 currentY 垂直排列
+          isLocked: true,
+          props: { assetId: myAssetId, w: canvas.width, h: canvas.height }, 
+          meta: {}, 
+        });
+
+        // 算好下一頁要貼的高度 (這頁的高度 + 間隔)
+        currentY += canvas.height + pageGap;
+      }
+
+      // 一次性把所有頁面貼上畫布
+      tldrawEditor.createAssets(assets);
+      tldrawEditor.createShapes(shapes);
+
+      // 縮放視角，讓畫面預設顯示第一頁 (或整個考卷)
       setTimeout(() => tldrawEditor.zoomToFit(), 200);
 
     } catch (err) {
